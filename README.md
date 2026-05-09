@@ -1,4 +1,4 @@
-<![CDATA[<div align="center">
+<div align="center">
 
 # ⚡ NovaFetch
 
@@ -252,4 +252,3 @@ NovaFetch is intended for downloading content that you have the right to downloa
 Made with ❤️ using React, Vite, and yt-dlp
 
 </div>
-]]>
