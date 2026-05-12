@@ -24,6 +24,29 @@ if (!fs.existsSync(TEMP_DIR)) {
   fs.mkdirSync(TEMP_DIR, { recursive: true });
 }
 
+// ─── In-memory cache for video info (10 min TTL, max 100 entries) ───
+const infoCache = new Map();
+const CACHE_TTL = 10 * 60 * 1000;
+const CACHE_MAX = 100;
+
+function getCachedInfo(url) {
+  const entry = infoCache.get(url);
+  if (entry && Date.now() - entry.timestamp < CACHE_TTL) {
+    return entry.data;
+  }
+  if (entry) infoCache.delete(url);
+  return null;
+}
+
+function setCachedInfo(url, data) {
+  // Evict oldest if at capacity
+  if (infoCache.size >= CACHE_MAX) {
+    const oldest = infoCache.keys().next().value;
+    infoCache.delete(oldest);
+  }
+  infoCache.set(url, { data, timestamp: Date.now() });
+}
+
 /**
  * Helper: find yt-dlp binary
  */
@@ -98,7 +121,7 @@ function findDownloadedFile(basePath, prefix, preferredExt) {
  */
 function runYtDlp(args) {
   return new Promise((resolve, reject) => {
-    const finalArgs = ['--js-runtimes', 'node', ...args];
+    const finalArgs = [...args];
     const proc = spawn(YT_DLP, finalArgs, { 
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true 
@@ -144,7 +167,18 @@ app.post('/api/info', async (req, res) => {
   }
 
   try {
-    const { stdout } = await runYtDlp(['--dump-json', '--no-download', '--no-warnings', url]);
+    // Check cache first
+    const cached = getCachedInfo(url);
+    if (cached) {
+      console.log('  [info] Cache hit for:', url);
+      return res.json(cached);
+    }
+
+    const { stdout } = await runYtDlp([
+      '--dump-json', '--no-download', '--no-warnings',
+      '--no-check-formats',
+      url,
+    ]);
     const data = JSON.parse(stdout);
 
     // Detect platform
@@ -179,6 +213,9 @@ app.post('/api/info', async (req, res) => {
       qualities: qualityOptions,
       formats: ['mp4', 'webm'],
     };
+
+    // Cache the result
+    setCachedInfo(url, response);
 
     return res.json(response);
   } catch (err) {
