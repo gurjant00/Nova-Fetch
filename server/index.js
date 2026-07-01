@@ -90,10 +90,30 @@ console.log(`  Using yt-dlp: ${YT_DLP}`);
 console.log(`  FFmpeg available: ${HAS_FFMPEG} (Path: ${FFMPEG_PATH})`);
 
 /**
- * Helper: sanitize filename
+ * Helper: sanitize filename (filesystem-safe)
  */
 function sanitizeFilename(name) {
   return name.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').substring(0, 100);
+}
+
+/**
+ * Helper: build a safe Content-Disposition header value.
+ * Uses an ASCII-only `filename=` param (for compatibility) and
+ * an RFC 5987 `filename*=` param (for unicode-aware clients).
+ */
+function buildContentDisposition(rawFilename) {
+  // ASCII-safe version: strip anything outside printable ASCII
+  const asciiSafe = rawFilename
+    .replace(/[^\x20-\x7E]/g, '_')   // non-ASCII → underscore
+    .replace(/["\\]/g, '_')           // quotes/backslash (unsafe in quoted-string)
+    .replace(/_+/g, '_')              // collapse consecutive underscores
+    .trim() || 'download';
+
+  // RFC 5987 encoded version preserves the original unicode name
+  const utf8Encoded = encodeURIComponent(rawFilename)
+    .replace(/['()]/g, (c) => '%' + c.charCodeAt(0).toString(16).toUpperCase());
+
+  return `attachment; filename="${asciiSafe}"; filename*=UTF-8''${utf8Encoded}`;
 }
 
 /**
@@ -257,8 +277,8 @@ app.post('/api/download', async (req, res) => {
       const filename = `${sanitizeFilename(data.title || 'thumbnail')}_thumb.jpg`;
 
       res.setHeader('Content-Type', 'image/jpeg');
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('X-Filename', filename);
+      res.setHeader('Content-Disposition', buildContentDisposition(filename));
+      res.setHeader('X-Filename', encodeURIComponent(filename));
       return res.send(buffer);
     }
 
@@ -329,8 +349,8 @@ app.post('/api/download', async (req, res) => {
 
       res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
       res.setHeader('Content-Length', stat.size);
-      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-      res.setHeader('X-Filename', filename);
+      res.setHeader('Content-Disposition', buildContentDisposition(filename));
+      res.setHeader('X-Filename', encodeURIComponent(filename));
 
       const stream = fs.createReadStream(finalFile);
       stream.pipe(res);
@@ -410,8 +430,8 @@ app.post('/api/download', async (req, res) => {
 
     res.setHeader('Content-Type', actualExt === 'webm' ? 'video/webm' : 'video/mp4');
     res.setHeader('Content-Length', stat.size);
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.setHeader('X-Filename', filename);
+    res.setHeader('Content-Disposition', buildContentDisposition(filename));
+    res.setHeader('X-Filename', encodeURIComponent(filename));
 
     const stream = fs.createReadStream(finalFile);
     stream.pipe(res);

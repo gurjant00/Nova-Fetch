@@ -39,7 +39,17 @@ export async function downloadMedia(
     throw new Error(error.message || 'Download failed');
   }
 
-  const filename = res.headers.get('X-Filename') || `novafetch_download.${options.type === 'audio' ? 'mp3' : options.format || 'mp4'}`;
+  const rawFilename = res.headers.get('X-Filename');
+  let filename: string;
+  if (rawFilename) {
+    try {
+      filename = decodeURIComponent(rawFilename);
+    } catch {
+      filename = rawFilename;
+    }
+  } else {
+    filename = `novafetch_download.${options.type === 'audio' ? 'mp3' : options.format || 'mp4'}`;
+  }
 
   const contentLength = res.headers.get('Content-Length');
   const total = contentLength ? parseInt(contentLength, 10) : 0;
